@@ -13,6 +13,13 @@ register(
     entry_point='robo_gym.envs:ExampleEnvRob',
 )
 
+# Queenie Environments
+
+register(
+    id='NoObstacleNavigationQueenieSim-v0',
+    entry_point='robo_gym.envs:NoObstacleNavigationQueenieSim',
+)
+
 # MiR100 Environments
 register(
     id='NoObstacleNavigationMir100Sim-v0',
@@ -84,6 +91,7 @@ register(
     id='AvoidanceRaad2022TestURRob-v0',
     entry_point='robo_gym.envs:AvoidanceRaad2022TestURRob',
 )
+
 
 
 

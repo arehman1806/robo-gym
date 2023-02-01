@@ -38,7 +38,9 @@ class QueenieEnv(gym.Env):
 
         self.mir100 = mir100_utils.Mir100()
         self.elapsed_steps = 0
+        # create observation space
         self.observation_space = self._get_observation_space()
+        # create action space
         self.action_space = spaces.Box(low=np.full((2), -1.0), high=np.full((2), 1.0), dtype=np.float32)
         self.seed()
         self.distance_threshold = 0.2
@@ -409,7 +411,7 @@ class NoObstacleNavigationQueenie(QueenieEnv):
         return reward, done, info
 
 class NoObstacleNavigationQueenieSim(NoObstacleNavigationQueenie, Simulation):
-    cmd = "roslaunch mir100_robot_server sim_robot_server.launch"
+    cmd = "roslaunch queenie_robot_server sim_robot_server.launch"
     def __init__(self, ip=None, lower_bound_port=None, upper_bound_port=None, gui=False, **kwargs):
         Simulation.__init__(self, self.cmd, ip, lower_bound_port, upper_bound_port, gui, **kwargs)
         NoObstacleNavigationQueenie.__init__(self, rs_address=self.robot_server_ip, **kwargs)

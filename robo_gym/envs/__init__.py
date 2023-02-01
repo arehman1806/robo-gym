@@ -11,3 +11,6 @@ from robo_gym.envs.ur.ur_ee_positioning import EndEffectorPositioningURSim, EndE
 from robo_gym.envs.ur.ur_avoidance_basic import BasicAvoidanceURSim, BasicAvoidanceURRob
 from robo_gym.envs.ur.ur_avoidance_raad import AvoidanceRaad2022URSim, AvoidanceRaad2022URRob
 from robo_gym.envs.ur.ur_avoidance_raad import AvoidanceRaad2022TestURSim, AvoidanceRaad2022TestURRob
+
+#Queenie
+from robo_gym.envs.queenie_diff_drive.queenie_diff_drive import NoObstacleNavigationQueenieSim
