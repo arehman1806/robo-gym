@@ -32,7 +32,7 @@ class QueenieEnv(gym.Env):
 
     real_robot = False
     laser_len = 1022
-    max_episode_steps = 500 
+    max_episode_steps = 100 
 
     def __init__(self, rs_address=None, **kwargs):
 

@@ -16,8 +16,8 @@ for episode in range(num_episodes):
     env.reset()
     while not done:
         # random step in the environment
-        action = np.zeros(2)
-        action[0] = 1
-        action[1] = 0
-        # state, reward, done, info = env.step(env.action_space.sample())
-        state, reward, done, info = env.step(action)
+        # action = np.zeros(2)
+        # action[0] = 1
+        # action[1] = 0
+        state, reward, done, info = env.step(env.action_space.sample())
+        # state, reward, done, info = env.step(action)
