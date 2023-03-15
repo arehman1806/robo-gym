@@ -48,17 +48,14 @@ class QueenieEnv(gym.Env):
         # create observation space
         self.observation_space = self._get_observation_space()
         # create action space
-        self.action_space = spaces.Box(low=np.full((2), -1.0), high=np.full((2), 1.0), dtype=np.float32)
+        self.action_space = self._get_action_space()
         self.seed()
         self.distance_threshold = 0.2
         self.min_target_dist = 1.0
         self.min_object_dist = 2.5
         self.laser_collision_threshold = 0.65
-        # Maximum linear velocity (m/s) of MiR
-        max_lin_vel = 0.2
-        # Maximum angular velocity (rad/s) of MiR
-        max_ang_vel = 0.3
-        self.max_vel = np.array([max_lin_vel, max_ang_vel])
+        
+        self.max_vel = self._get_max_action_values()
         self.previous_camera_image = None
         self.current_camera_image = None
 
@@ -69,6 +66,16 @@ class QueenieEnv(gym.Env):
             print("WARNING: No IP and Port passed. Simulation will not be started")
             print("WARNING: Use this only to get environment shape")
 
+    def _get_action_space(self):
+        return spaces.Box(low=np.full((2), -1.0), high=np.full((2), 1.0), dtype=np.float32)
+    
+    def _get_max_action_values(self):
+        # Maximum linear velocity (m/s) of MiR
+        max_lin_vel = 0.2
+        # Maximum angular velocity (rad/s) of MiR
+        max_ang_vel = 0.3
+        return np.array([max_lin_vel, max_ang_vel])
+    
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
@@ -101,22 +108,25 @@ class QueenieEnv(gym.Env):
 
         rs_state[3:6] = start_pose
 
-        # Set target position
-        if target_pose:
-            assert len(target_pose)==3
-        else:
-            target_pose = self._get_target(start_pose)
-        rs_state[0:3] = target_pose
+        # # Set target position
+        # if target_pose:
+        #     assert len(target_pose)==3
+        # else:
+            # target_pose = self._get_target(start_pose)
+        rs_state[0:3] = [0,0,0]
 
         if object_pose:
             assert len(object_pose) == 3
         else:
-            object_pose = self._get_object_pose(start_pose)
+            object_id = self._get_object_id()
+            object_pose = self._get_object_pose(object_id)
         rs_state[6:9] = object_pose
+        rs_state[1] = object_id
 
         # Set initial state of the Robot Server
         state_msg = robot_server_pb2.State(state = rs_state.tolist())
         if not self.client.set_state_msg(state_msg):
+            # input("here we go again. tell me what to do?")
             raise RobotServerError("set_state")
 
         # Get Robot Server state
@@ -139,6 +149,11 @@ class QueenieEnv(gym.Env):
         return 0, False, {}
 
     def step(self, action):
+        if action[0] == -999:
+            rs_action = copy.deepcopy(action)
+            if not self.client.send_action(rs_action):
+                raise RobotServerError("send_action")
+            return self.state, 0, False, {}
         
         action = action.astype(np.float32)
 
@@ -171,6 +186,9 @@ class QueenieEnv(gym.Env):
 
     def render(self):
         pass
+
+    def _get_object_id(self):
+        return self.np_random.choice(np.array([1,2,3]))
 
     def _get_robot_server_state_len(self):
         """Get length of the Robot Server state.
@@ -266,7 +284,15 @@ class QueenieEnv(gym.Env):
 
         return [x_t,y_t,yaw_t]
 
-    def _get_object_pose(self, object_coordinates):
+    def _get_object_pose(self, object_id):
+
+        x_t = self.np_random.uniform(low=2, high=2.5)
+        y_t = self.np_random.uniform(low=-0.7, high=0.7)
+        if object_id == 3:
+            yaw_t = self.np_random.uniform(low=-1, high=1)
+        else:
+            yaw_t = self.np_random.uniform(low=-np.pi/2, high=np.pi/2)
+        return [x_t, y_t, yaw_t]
         object_far_enough = False
 
         while not object_far_enough:
@@ -435,8 +461,186 @@ class QueenieEnv(gym.Env):
         if np.linalg.norm(np.array(robot_pose) - np.array(object_pose), axis=-1) > 7:
             return True
         return False
+    
+
+
+class GraspQueenieV2(QueenieEnv):
+    def _reward(self, rs_state, action):
+        reward = 0
+        done = False
+        info = {}
+        linear_power = 0
+        angular_power = 0
+        
+
+        # is the handle visible:
+        distance_to_handle = rs_state[11]
+        is_handle_visible = 1 if distance_to_handle < 20 else 0
+
+        # get angle angle between the robot and the handle
+        angle_to_handle = rs_state[12]
+
+        # Reward base
+        base_reward = is_handle_visible * (1/(distance_to_handle + 0.01))
+        if self.prev_base_reward is not None:
+            reward = base_reward - self.prev_base_reward
+        self.prev_base_reward = base_reward
+
+        base_reward -= abs(action[2])*0.3
+
+        # End episode if termination conditions meet
+        if self._robot_or_object_outside_of_boundary_box(rs_state[3:9]) or self._far_from_object(rs_state[3:9]) or not is_handle_visible:
+            reward = -100
+            done = True
+            info['final_status'] = 'out of boundary'
+
+        # The episode terminates with success if the touches the palm.
+        if rs_state[15] == 1:
+            reward = 100
+            done = True
+            info['final_status'] = 'success'
+
+        if self.elapsed_steps >= self.max_episode_steps:
+            done = True
+            info['final_status'] = 'max_steps_exceeded'
+
+        return reward, done, info
+    
+    def _robot_or_object_outside_of_boundary_box(self, poses):
+        object_pose = poses[3:5]
+        robot_pose = poses[0:2]
+        if self._robot_outside_of_boundary_box(object_pose) or self._robot_outside_of_boundary_box(robot_pose):
+            return True
+        else:
+            return False
+        
+    def _get_max_action_values(self):
+        # Maximum linear velocity (m/s) of MiR
+        max_lin_vel = 0.3
+        # Maximum angular velocity (rad/s) of MiR
+        max_ang_vel = 0.45
+
+        max_delta = 0.3
+        return np.array([max_lin_vel, max_ang_vel, max_delta])
+    
+
+    def _get_action_space(self):
+        return spaces.Box(low=np.full((3), -1.0), high=np.full((3), 1.0), dtype=np.float32)
+
+    def _get_object_pose(self, object_id):
+
+        x_t = self.np_random.uniform(low=1.1, high=1.6)
+        y_t = self.np_random.uniform(low=-0.2, high=0.2)
+        yaw_t = self.np_random.uniform(low=-np.pi/4, high=np.pi/4)
+        return [x_t, y_t, yaw_t]
+    
+    def _get_object_id(self):
+        return self.np_random.choice(np.arange(12))
+
+
+
+
+
+class GraspQueenieV2Sim(GraspQueenieV2, Simulation):
+    cmd = "roslaunch queenie_robot_server sim_robot_server.launch"
+    def __init__(self, ip=None, lower_bound_port=None, upper_bound_port=None, gui=False, **kwargs):
+        Simulation.__init__(self, self.cmd, ip, lower_bound_port, upper_bound_port, gui, **kwargs)
+        GraspQueenieV2.__init__(self, rs_address=self.robot_server_ip, **kwargs)
+
+
+class GraspQueenieV2Test(GraspQueenieV2):
+        
+    def _get_max_action_values(self):
+        # Maximum linear velocity (m/s) of MiR
+        max_lin_vel = 0.3
+        # Maximum angular velocity (rad/s) of MiR
+        max_ang_vel = 0.45
+
+        max_delta = 0.3
+        return np.array([max_lin_vel, max_ang_vel, max_delta])
+
+    def _get_object_pose(self, object_id):
+
+        x_t = self.np_random.uniform(low=3, high=3.1)
+        y_t = self.np_random.uniform(low=-0.5, high=0.5)
+        yaw_t = self.np_random.uniform(low=-np.pi, high=-np.pi/2)
+        return [x_t, y_t, yaw_t]
+    
+    def _get_object_id(self):
+        return self.np_random.choice(np.arange(12))
+
+
+
+
+
+class GraspQueenieV2TestSim(GraspQueenieV2Test, Simulation):
+    cmd = "roslaunch queenie_robot_server sim_robot_server.launch"
+    def __init__(self, ip=None, lower_bound_port=None, upper_bound_port=None, gui=False, **kwargs):
+        Simulation.__init__(self, self.cmd, ip, lower_bound_port, upper_bound_port, gui, **kwargs)
+        GraspQueenieV2Test.__init__(self, rs_address=self.robot_server_ip, **kwargs)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class GraspQueenie(QueenieEnv):
-    # laser_len = 133
+
+
+
 
     def _reward(self, rs_state, action):
         reward = 0
@@ -457,7 +661,7 @@ class GraspQueenie(QueenieEnv):
         angle_to_handle = rs_state[12]
 
         # Reward base
-        base_reward = is_handle_visible * (1/(distance_to_handle + 1e-6) + (1 / (abs(angle_to_handle - np.pi/2) + 0.05))*0.1)
+        base_reward = is_handle_visible * (1/(distance_to_handle + 1e-6) + (1 / (abs(angle_to_handle) + 0.05))*0.1)
         if self.prev_base_reward is not None:
             reward = base_reward - self.prev_base_reward
         self.prev_base_reward = base_reward
@@ -465,8 +669,8 @@ class GraspQueenie(QueenieEnv):
         linear_power = abs(action[0] *0.10)
         angular_power = abs(action[1] *0.01)
 
-        reward -= linear_power
-        reward -= angular_power
+        # reward -= linear_power
+        # reward -= angular_power
 
         # negative reward for every time step elapsed
         # reward = base_reward
@@ -498,6 +702,8 @@ class GraspQueenie(QueenieEnv):
         robot_pose = poses[0:2]
         if self._robot_outside_of_boundary_box(object_pose) or self._robot_outside_of_boundary_box(robot_pose):
             return True
+        else:
+            return False
 
     
 

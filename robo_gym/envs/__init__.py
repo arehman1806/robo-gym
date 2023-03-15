@@ -14,3 +14,5 @@ from robo_gym.envs.ur.ur_avoidance_raad import AvoidanceRaad2022TestURSim, Avoid
 
 #Queenie
 from robo_gym.envs.queenie_diff_drive.queenie_diff_drive import NoObstacleNavigationQueenieSim
+from robo_gym.envs.queenie_hrl.queenie_hrl import ExplorationQueenieSim
+from robo_gym.envs.queenie_hrl.queenie_hrl import GraspQueenieSim, GraspQueenieV2Sim, GraspQueenieV2TestSim

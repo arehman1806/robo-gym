@@ -20,6 +20,27 @@ register(
     entry_point='robo_gym.envs:NoObstacleNavigationQueenieSim',
 )
 
+register(
+    id='ExplorationQueenieSim-v0',
+    entry_point='robo_gym.envs:ExplorationQueenieSim',
+)
+
+register(
+    id='GraspQueenieSim-v0',
+    entry_point='robo_gym.envs:GraspQueenieSim',
+)
+
+register(
+    id='GraspQueenieSim-v2',
+    entry_point='robo_gym.envs:GraspQueenieV2Sim',
+)
+
+register(
+    id='GraspQueenieSimTest-v0',
+    entry_point='robo_gym.envs:GraspQueenieV2TestSim',
+)
+
+
 # MiR100 Environments
 register(
     id='NoObstacleNavigationMir100Sim-v0',
